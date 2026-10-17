@@ -546,6 +546,55 @@ static void query_bme680_bsec(uint8_t ch, uint8_t, CayenneLPP& lpp) {
 // next gets channel 3, and so on.
 // ============================================================
 
+#if ENV_INCLUDE_SHT3X || ENV_INCLUDE_QMP6988 || ENV_INCLUDE_DHT12
+#include "M5EnvSensors.h"           // M5Stack ENV I/II/III chips
+#endif
+
+#if ENV_INCLUDE_SHT3X
+#ifndef TELEM_SHT3X_ADDRESS
+#define TELEM_SHT3X_ADDRESS 0x44      // SHT30/31/35 (M5Stack ENV II/III); 0x45 with ADDR high
+#endif
+static m5env::SHT3X SHT3X_SENSOR;
+static uint8_t init_sht3x(TwoWire* wire, uint8_t addr) { return SHT3X_SENSOR.begin(wire, addr) ? 1 : 0; }
+static void query_sht3x(uint8_t ch, uint8_t, CayenneLPP& lpp) {
+  float t, h;
+  if (SHT3X_SENSOR.read(t, h)) {
+    lpp.addTemperature(ch, t);
+    lpp.addRelativeHumidity(ch, h);
+  }
+}
+#endif
+
+#if ENV_INCLUDE_QMP6988
+#ifndef TELEM_QMP6988_ADDRESS
+#define TELEM_QMP6988_ADDRESS 0x70    // QMP6988 (M5Stack ENV III)
+#endif
+#define TELEM_QMP6988_SEALEVELPRESSURE_HPA (1013.25)
+static m5env::QMP6988 QMP6988_SENSOR;
+static uint8_t init_qmp6988(TwoWire* wire, uint8_t addr) { return QMP6988_SENSOR.begin(wire, addr) ? 1 : 0; }
+static void query_qmp6988(uint8_t ch, uint8_t, CayenneLPP& lpp) {
+  float t, pa;
+  if (QMP6988_SENSOR.read(t, pa)) {
+    const float hpa = pa / 100.0f;
+    lpp.addTemperature(ch, t);
+    lpp.addBarometricPressure(ch, hpa);
+    lpp.addAltitude(ch, 44330.0f * (1.0f - powf(hpa / (float)TELEM_QMP6988_SEALEVELPRESSURE_HPA, 0.1903f)));
+  }
+}
+#endif
+
+#if ENV_INCLUDE_DHT12
+static m5env::DHT12 DHT12_SENSOR;
+static uint8_t init_dht12(TwoWire* wire, uint8_t addr) { return DHT12_SENSOR.begin(wire, addr) ? 1 : 0; }
+static void query_dht12(uint8_t ch, uint8_t, CayenneLPP& lpp) {
+  float t, h;
+  if (DHT12_SENSOR.read(t, h)) {
+    lpp.addTemperature(ch, t);
+    lpp.addRelativeHumidity(ch, h);
+  }
+}
+#endif
+
 struct SensorDef {
   uint8_t     address;
   const char* name;
@@ -575,14 +624,23 @@ static const SensorDef SENSOR_TABLE[] = {
   { TELEM_BMP280_ADDRESS,                       "BMP280",       init_bmp280,      query_bmp280      },
   { TELEM_BOSCH_ALT_ADDR(TELEM_BMP280_ADDRESS), "BMP280",       init_bmp280,      query_bmp280      },
 #endif
+#if ENV_INCLUDE_QMP6988
+  { TELEM_QMP6988_ADDRESS, "QMP6988",      init_qmp6988,  query_qmp6988  },   // before SHTC3: same address, checked by chip ID
+#endif
 #if ENV_INCLUDE_SHTC3
   { 0x70,                  "SHTC3",        init_shtc3,    query_shtc3    },
+#endif
+#if ENV_INCLUDE_SHT3X
+  { TELEM_SHT3X_ADDRESS,   "SHT3X",        init_sht3x,    query_sht3x    },   // before SHT4X/INA226: same address, checked by CRC
 #endif
 #if ENV_INCLUDE_SHT4X
   { TELEM_SHT4X_ADDRESS,   "SHT4X",        init_sht4x,    query_sht4x    },
 #endif
 #if ENV_INCLUDE_LPS22HB
   { 0x5C,                  "LPS22HB",      init_lps22hb,  query_lps22hb  },
+#endif
+#if ENV_INCLUDE_DHT12
+  { 0x5C,                  "DHT12",        init_dht12,    query_dht12    },   // after LPS22HB: same address, checked by checksum
 #endif
 #if ENV_INCLUDE_INA3221
   { TELEM_INA3221_ADDRESS, "INA3221",      init_ina3221,  query_ina3221  },
